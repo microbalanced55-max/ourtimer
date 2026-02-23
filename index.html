@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>復健科計時器-雲端版</title>
+    <style>
+        :root {
+            --c-1: #e74c3c; --c-2: #9b59b6; --c-3: #f1c40f; --c-4: #e67e22;
+            --c-5: #3498db; --c-6: #95a5a6; --c-7: #34495e; --c-8: #2ecc71;
+            --c-9: #1abc9c;
+        }
+        body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 5px; margin: 0; user-select: none; }
+        h1 { color: #333; margin: 8px 0; font-size: 1.1rem; }
+        h2 { width: 95%; text-align: left; padding-left: 8px; color: #444; border-left: 4px solid #007bff; margin: 8px 0 5px 0; font-size: 0.9rem; }
+        .timer-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
+        .timer-card { background: white; padding: 12px 8px 8px 8px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 200px; text-align: center; border: 2px solid #ddd; position: relative; overflow: hidden; transition: 0.3s; }
+        .unit-label { position: absolute; top: 0; left: 0; background: #444; color: white; font-size: 0.7rem; padding: 1px 6px; border-bottom-right-radius: 6px; font-weight: bold; z-index: 10; }
+        .timer-card.active { border-color: #007bff; background-color: #f0f7ff; }
+        .timer-card.alarm { background-color: #ff5252 !important; animation: shake 0.5s infinite; border-color: #b33939; }
+        .timer-card.alarm .time-display { color: white !important; }
+        .time-control-row { display: flex; align-items: center; justify-content: space-between; margin: 3px 0; }
+        .time-display { font-size: 2.3rem; font-weight: bold; font-family: 'Courier New', monospace; color: #000; flex: 1; }
+        .adj-btn { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #007bff; background: white; color: #007bff; font-size: 1.4rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 5px 0; }
+        .opt-sq { aspect-ratio: 1.2/1; border: 1px solid #eee; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: bold; display: flex; align-items: center; justify-content: center; background: #fafafa; color: #333; line-height: 1; }
+        .opt-sq.selected { color: white !important; border-color: rgba(255,255,255,0.3) !important; }
+        .opt-sq[data-type="1"].selected { background-color: var(--c-1) !important; }
+        .opt-sq[data-type="2"].selected { background-color: var(--c-2) !important; }
+        .opt-sq[data-type="3"].selected { background-color: var(--c-3) !important; }
+        .opt-sq[data-type="4"].selected { background-color: var(--c-4) !important; }
+        .opt-sq[data-type="5"].selected { background-color: var(--c-5) !important; }
+        .opt-sq[data-type="6"].selected { background-color: var(--c-6) !important; }
+        .opt-sq[data-type="7"].selected { background-color: var(--c-7) !important; }
+        .opt-sq[data-type="8"].selected { background-color: var(--c-8) !important; }
+        .opt-sq[data-type="9"].selected { background-color: var(--c-9) !important; }
+        .controls button { width: 100%; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; }
+        .start-btn { background-color: #444; color: white; padding: 10px; margin-bottom: 5px; font-size: 0.95rem; }
+        .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .reset-btn { background-color: #f8f9fa; color: #999; border: 1px solid #ddd !important; font-size: 0.7rem; padding: 4px; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+    </style>
+</head>
+<body>
+
+    <h1>🏥 復健治療同步計時台</h1>
+
+    <h2>🛏️ 床位區</h2>
+    <div class="timer-container" id="beds-wrapper"></div>
+
+    <h2>🪑 椅子區</h2>
+    <div class="timer-container" id="chairs-wrapper"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // 已代換為你的新設定
+        const firebaseConfig = {
+            apiKey: "AIzaSyCqp8aFnzsksNXituOqLMkA34kvP-TOv60",
+            authDomain: "our-timer.firebaseapp.com",
+            databaseURL: "https://our-timer-default-rtdb.firebaseio.com",
+            projectId: "our-timer",
+            storageBucket: "our-timer.firebasestorage.app",
+            messagingSenderId: "962997144747",
+            appId: "1:962997144747:web:e7adc853659a9885e0fbee",
+            measurementId: "G-ZBP41SRJ8E"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        const INITIAL_DEFAULT = 15;
+        let localIntervals = {};
+        let beepIntervals = {};
+
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        function playBeep() {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(880, now);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.start(); osc.stop(now + 0.5);
+        }
+
+        const options = [
+            { id: 1, label: "針灸" }, { id: 2, label: "推拿" }, { id: 3, label: "超音" }, 
+            { id: 4, label: "拔罐" }, { id: 5, label: "貼藥" }, { id: 6, label: "不貼" }, 
+            { id: 7, label: "待開" }, { id: 8, label: "傷畢" }, { id: 9, label: "不送" }
+        ];
+
+        function createTimerUI(id, label, containerId) {
+            const wrapper = document.getElementById(containerId);
+            const card = document.createElement('div');
+            card.className = 'timer-card';
+            card.id = `card-${id}`;
+            const gridHtml = options.map(opt => `<div class="opt-sq" data-type="${opt.id}">${opt.label}</div>`).join('');
+
+            card.innerHTML = `
+                <div class="unit-label">${label}</div>
+                <div class="time-control-row">
+                    <button class="adj-btn minus-btn">-</button>
+                    <div class="time-display" id="display-${id}">15:00</div>
+                    <button class="adj-btn plus-btn">+</button>
+                </div>
+                <div class="option-grid">${gridHtml}</div>
+                <div class="controls">
+                    <button id="btn-${id}" class="start-btn">開始計時</button>
+                    <button id="reset-${id}" class="reset-btn">重置</button>
+                </div>
+            `;
+            wrapper.appendChild(card);
+
+            card.querySelector('.minus-btn').onclick = () => adjustTime(id, -1);
+            card.querySelector('.plus-btn').onclick = () => adjustTime(id, 1);
+            card.querySelectorAll('.opt-sq').forEach(btn => {
+                btn.onclick = () => toggleType(id, btn.dataset.type);
+            });
+            card.querySelector('.start-btn').onclick = () => {
+                onValue(ref(db, `timers/${id}/baseMinutes`), (snap) => {
+                    const mins = snap.val() || INITIAL_DEFAULT;
+                    update(ref(db, `timers/${id}`), { status: 'running', endTime: Date.now() + (mins * 60000) });
+                }, { onlyOnce: true });
+            };
+            card.querySelector('.reset-btn').onclick = () => {
+                if(beepIntervals[id]) clearInterval(beepIntervals[id]);
+                set(ref(db, `timers/${id}`), { status: 'idle', baseMinutes: INITIAL_DEFAULT, selectedTypes: [], endTime: 0 });
+            };
+        }
+
+        function adjustTime(id, delta) {
+            runTransaction(ref(db, `timers/${id}`), (data) => {
+                if (!data) data = { status: 'idle', baseMinutes: INITIAL_DEFAULT };
+                if (data.status === 'running') {
+                    data.endTime = Math.max(Date.now(), data.endTime + (delta * 60000));
+                } else {
+                    data.baseMinutes = Math.max(1, (data.baseMinutes || INITIAL_DEFAULT) + delta);
+                }
+                return data;
+            });
+        }
+
+        function toggleType(id, type) {
+            runTransaction(ref(db, `timers/${id}/selectedTypes`), (list) => {
+                let l = Array.isArray(list) ? list : [];
+                const typeStr = String(type);
+                return l.includes(typeStr) ? l.filter(i => i !== typeStr) : [...l, typeStr];
+            });
+        }
+
+        const beds = [1, 2, 4, 5];
+        const chairs = [1, 2, 3, 5, 6];
+        beds.forEach(num => createTimerUI(`bed${num}`, `${num} 床`, 'beds-wrapper'));
+        chairs.forEach(num => createTimerUI(`chair${num}`, `${num} 椅`, 'chairs-wrapper'));
+
+        onValue(ref(db, 'timers'), (snapshot) => {
+            const data = snapshot.val() || {};
+            [...beds.map(n=>`bed${n}`), ...chairs.map(n=>`chair${n}`)].forEach(id => syncUI(id, data[id]));
+        });
+
+        function syncUI(id, serverData) {
+            const card = document.getElementById(`card-${id}`);
+            const display = document.getElementById(`display-${id}`);
+            const btn = document.getElementById(`btn-${id}`);
+            if(!card) return;
+
+            const selectedList = (serverData && serverData.selectedTypes) ? serverData.selectedTypes.map(String) : [];
+            card.querySelectorAll('.opt-sq').forEach(b => {
+                b.classList.toggle('selected', selectedList.includes(String(b.dataset.type)));
+            });
+
+            if (serverData && serverData.status === 'running') {
+                card.classList.add('active');
+                btn.disabled = true;
+                if (localIntervals[id]) clearInterval(localIntervals[id]);
+                localIntervals[id] = setInterval(() => {
+                    const timeLeft = Math.max(0, Math.floor((serverData.endTime - Date.now()) / 1000));
+                    display.innerText = `${Math.floor(timeLeft/60)}:${(timeLeft%60).toString().padStart(2,'0')}`;
+                    if (timeLeft <= 0) {
+                        clearInterval(localIntervals[id]);
+                        if (!card.classList.contains('alarm')) {
+                            card.classList.add('alarm');
+                            playBeep();
+                            if(beepIntervals[id]) clearInterval(beepIntervals[id]);
+                            beepIntervals[id] = setInterval(playBeep, 3000);
+                        }
+                    } else {
+                        card.classList.remove('alarm');
+                        if(beepIntervals[id]) clearInterval(beepIntervals[id]);
+                    }
+                }, 1000);
+            } else {
+                if (localIntervals[id]) clearInterval(localIntervals[id]);
+                if (beepIntervals[id]) clearInterval(beepIntervals[id]);
+                card.classList.remove('active', 'alarm');
+                btn.disabled = false;
+                display.innerText = `${serverData?.baseMinutes || INITIAL_DEFAULT}:00`;
+            }
+        }
+        document.addEventListener('click', () => { if (audioCtx.state === 'suspended') audioCtx.resume(); }, { once: true });
+    </script>
+</body>
+</html>
