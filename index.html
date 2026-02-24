@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>復健科計時器-雲端版</title>
+    <title>復健科計時器-同步加強版</title>
     <style>
         :root {
             --c-1: #e74c3c; --c-2: #9b59b6; --c-3: #f1c40f; --c-4: #e67e22;
@@ -13,17 +13,60 @@
         body { font-family: "Microsoft JhengHei", sans-serif; background-color: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 5px; margin: 0; user-select: none; }
         h1 { color: #333; margin: 8px 0; font-size: 1.1rem; }
         h2 { width: 95%; text-align: left; padding-left: 8px; color: #444; border-left: 4px solid #007bff; margin: 8px 0 5px 0; font-size: 0.9rem; }
+        
         .timer-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: 100%; }
-        .timer-card { background: white; padding: 12px 8px 8px 8px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 200px; text-align: center; border: 2px solid #ddd; position: relative; overflow: hidden; transition: 0.3s; }
-        .unit-label { position: absolute; top: 0; left: 0; background: #444; color: white; font-size: 0.7rem; padding: 1px 6px; border-bottom-right-radius: 6px; font-weight: bold; z-index: 10; }
+        
+        .timer-card { 
+            background: white; padding: 12px 8px 8px 8px; border-radius: 8px; 
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1); width: 200px; 
+            text-align: center; border: 2px solid #ddd; position: relative; 
+            overflow: hidden; transition: 0.3s;
+        }
+        
+        .unit-label {
+            position: absolute; top: 0; left: 0;
+            background: #444; color: white;
+            font-size: 0.7rem; padding: 1px 6px;
+            border-bottom-right-radius: 6px; font-weight: bold; z-index: 10;
+        }
+
         .timer-card.active { border-color: #007bff; background-color: #f0f7ff; }
-        .timer-card.alarm { background-color: #ff5252 !important; animation: shake 0.5s infinite; border-color: #b33939; }
+        .timer-card.alarm { 
+            background-color: #ff5252 !important; 
+            animation: shake 0.5s infinite; 
+            border-color: #b33939;
+        }
         .timer-card.alarm .time-display { color: white !important; }
+        .timer-card.alarm .adj-btn { border-color: white; color: white; }
+
         .time-control-row { display: flex; align-items: center; justify-content: space-between; margin: 3px 0; }
         .time-display { font-size: 2.3rem; font-weight: bold; font-family: 'Courier New', monospace; color: #000; flex: 1; }
-        .adj-btn { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #007bff; background: white; color: #007bff; font-size: 1.4rem; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-        .option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin: 5px 0; }
-        .opt-sq { aspect-ratio: 1.2/1; border: 1px solid #eee; border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-weight: bold; display: flex; align-items: center; justify-content: center; background: #fafafa; color: #333; line-height: 1; }
+        
+        .adj-btn {
+            width: 36px; height: 36px; border-radius: 50%; border: 2px solid #007bff;
+            background: white; color: #007bff; font-size: 1.4rem; font-weight: bold;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+        }
+
+        .option-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 8px 0; }
+        
+        .opt-sq { 
+            aspect-ratio: 1.2/1; 
+            border: 1.5px solid #ddd; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 1.2rem; 
+            font-weight: 900;   
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            background: #fafafa; 
+            color: #333; 
+            padding: 0;
+            box-sizing: border-box;
+            letter-spacing: 0;
+        }
+
         .opt-sq.selected { color: white !important; border-color: rgba(255,255,255,0.3) !important; }
         .opt-sq[data-type="1"].selected { background-color: var(--c-1) !important; }
         .opt-sq[data-type="2"].selected { background-color: var(--c-2) !important; }
@@ -34,10 +77,12 @@
         .opt-sq[data-type="7"].selected { background-color: var(--c-7) !important; }
         .opt-sq[data-type="8"].selected { background-color: var(--c-8) !important; }
         .opt-sq[data-type="9"].selected { background-color: var(--c-9) !important; }
+
         .controls button { width: 100%; border-radius: 5px; border: none; font-weight: bold; cursor: pointer; }
         .start-btn { background-color: #444; color: white; padding: 10px; margin-bottom: 5px; font-size: 0.95rem; }
         .start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
         .reset-btn { background-color: #f8f9fa; color: #999; border: 1px solid #ddd !important; font-size: 0.7rem; padding: 4px; }
+
         @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
     </style>
 </head>
@@ -55,16 +100,14 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getDatabase, ref, set, onValue, update, runTransaction } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
-        // 已代換為你的新設定
         const firebaseConfig = {
-            apiKey: "AIzaSyCqp8aFnzsksNXituOqLMkA34kvP-TOv60",
-            authDomain: "our-timer.firebaseapp.com",
-            databaseURL: "https://our-timer-default-rtdb.firebaseio.com",
-            projectId: "our-timer",
-            storageBucket: "our-timer.firebasestorage.app",
-            messagingSenderId: "962997144747",
-            appId: "1:962997144747:web:e7adc853659a9885e0fbee",
-            measurementId: "G-ZBP41SRJ8E"
+            apiKey: "AIzaSyBN9gaydW7LEdLwef9wqMxrT8LSMNLkzCU",
+            authDomain: "mytimer2010.firebaseapp.com",
+            databaseURL: "https://mytimer2010-default-rtdb.firebaseio.com",
+            projectId: "mytimer2010",
+            storageBucket: "mytimer2010.firebasestorage.app",
+            messagingSenderId: "82378878715",
+            appId: "1:82378878715:web:bc5a2c4d2735f38b294a5e"
         };
 
         const app = initializeApp(firebaseConfig);
@@ -83,14 +126,17 @@
             osc.frequency.setValueAtTime(880, now);
             gain.gain.setValueAtTime(0.3, now);
             gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
-            osc.connect(gain); gain.connect(audioCtx.destination);
-            osc.start(); osc.stop(now + 0.5);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(now + 0.5);
         }
 
+        // 已將 id:7 的標籤改為「開藥」
         const options = [
             { id: 1, label: "針灸" }, { id: 2, label: "推拿" }, { id: 3, label: "超音" }, 
             { id: 4, label: "拔罐" }, { id: 5, label: "貼藥" }, { id: 6, label: "不貼" }, 
-            { id: 7, label: "待開" }, { id: 8, label: "傷畢" }, { id: 9, label: "不送" }
+            { id: 7, label: "開藥" }, { id: 8, label: "傷畢" }, { id: 9, label: "不送" }
         ];
 
         function createTimerUI(id, label, containerId) {
@@ -123,7 +169,10 @@
             card.querySelector('.start-btn').onclick = () => {
                 onValue(ref(db, `timers/${id}/baseMinutes`), (snap) => {
                     const mins = snap.val() || INITIAL_DEFAULT;
-                    update(ref(db, `timers/${id}`), { status: 'running', endTime: Date.now() + (mins * 60000) });
+                    update(ref(db, `timers/${id}`), { 
+                        status: 'running', 
+                        endTime: Date.now() + (mins * 60000) 
+                    });
                 }, { onlyOnce: true });
             };
             card.querySelector('.reset-btn').onclick = () => {
@@ -178,8 +227,11 @@
                 btn.disabled = true;
                 if (localIntervals[id]) clearInterval(localIntervals[id]);
                 localIntervals[id] = setInterval(() => {
-                    const timeLeft = Math.max(0, Math.floor((serverData.endTime - Date.now()) / 1000));
-                    display.innerText = `${Math.floor(timeLeft/60)}:${(timeLeft%60).toString().padStart(2,'0')}`;
+                    const now = Date.now();
+                    const timeLeft = Math.max(0, Math.floor((serverData.endTime - now) / 1000));
+                    const m = Math.floor(timeLeft / 60);
+                    const s = timeLeft % 60;
+                    display.innerText = `${m}:${s.toString().padStart(2, '0')}`;
                     if (timeLeft <= 0) {
                         clearInterval(localIntervals[id]);
                         if (!card.classList.contains('alarm')) {
@@ -190,7 +242,10 @@
                         }
                     } else {
                         card.classList.remove('alarm');
-                        if(beepIntervals[id]) clearInterval(beepIntervals[id]);
+                        if(beepIntervals[id]) {
+                            clearInterval(beepIntervals[id]);
+                            delete beepIntervals[id];
+                        }
                     }
                 }, 1000);
             } else {
